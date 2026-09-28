@@ -2,50 +2,12 @@ import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import './setup.js';
 import { createApp } from '../src/app.js';
-import { ADMIN_PASSWORD } from './setup.js';
+import { adminAgent, createUser, loginAgent } from './setup.js';
 
 const app = createApp();
 
-describe('POST /api/admin/login', () => {
-  it('logs in with the correct password and sets an httpOnly cookie', async () => {
-    const res = await request(app).post('/api/admin/login').send({ password: ADMIN_PASSWORD });
-
-    expect(res.status).toBe(200);
-    const cookie = res.headers['set-cookie']?.[0];
-    expect(cookie).toBeDefined();
-    expect(cookie).toMatch(/admin_token=/);
-    expect(cookie.toLowerCase()).toMatch(/httponly/);
-  });
-
-  it('rejects the wrong password', async () => {
-    const res = await request(app).post('/api/admin/login').send({ password: 'wrong-password' });
-
-    expect(res.status).toBe(401);
-  });
-});
-
-describe('admin session lifecycle', () => {
-  it('GET /api/admin/me is 401 without a cookie and 200 once logged in', async () => {
-    const agent = request.agent(app);
-
-    await agent.get('/api/admin/me').expect(401);
-    await agent.post('/api/admin/login').send({ password: ADMIN_PASSWORD }).expect(200);
-    await agent.get('/api/admin/me').expect(200);
-  });
-
-  it('POST /api/admin/logout clears the cookie, invalidating further requests', async () => {
-    const agent = request.agent(app);
-
-    await agent.post('/api/admin/login').send({ password: ADMIN_PASSWORD }).expect(200);
-    await agent.get('/api/admin/me').expect(200);
-    await agent.post('/api/admin/logout').expect(200);
-    await agent.get('/api/admin/me').expect(401);
-  });
-});
-
-describe('admin routes require authentication', () => {
+describe('admin routes require authentication and the admin role', () => {
   const protectedRoutes = [
-    ['get', '/api/admin/me'],
     ['get', '/api/admin/products'],
     ['post', '/api/admin/products'],
     ['get', '/api/admin/orders'],
@@ -55,5 +17,32 @@ describe('admin routes require authentication', () => {
     const res = await request(app)[method](path);
 
     expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: 'Not authenticated' });
+  });
+
+  it.each(protectedRoutes)('403s on %s %s for a logged-in customer', async (method, path) => {
+    await createUser({ email: 'customer@example.com', password: 'correct-horse' });
+    const agent = await loginAgent(app, 'customer@example.com', 'correct-horse');
+
+    const res = await agent[method](path);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: 'Forbidden' });
+  });
+
+  it('allows a logged-in admin through to GET /api/admin/products', async () => {
+    const agent = await adminAgent(app);
+
+    const res = await agent.get('/api/admin/products');
+
+    expect(res.status).toBe(200);
+  });
+
+  it('allows a logged-in admin through to GET /api/admin/orders', async () => {
+    const agent = await adminAgent(app);
+
+    const res = await agent.get('/api/admin/orders');
+
+    expect(res.status).toBe(200);
   });
 });

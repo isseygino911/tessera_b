@@ -8,7 +8,7 @@
     "test": "vitest run",
     "db:setup": "node scripts/db-setup.js",
     "db:setup:test": "node scripts/db-setup.js --test",
-    "hash-password": "node scripts/hash-password.js"
+    "user:create": "node scripts/create-user.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

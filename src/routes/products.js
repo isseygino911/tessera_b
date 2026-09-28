@@ -1,28 +1,17 @@
 import { Router } from 'express';
-import { pool } from '../db.js';
+import { asyncHandler } from '../lib/http.js';
+import { validate } from '../middleware/validate.js';
+import { productSchema, productUpdateSchema } from '../schemas/products.js';
+import * as products from '../controllers/products.js';
 
-export const productsRouter = Router();
+const productsRouter = Router();
+productsRouter.get('/', asyncHandler(products.listActive));
 
-function toPublicProduct(row) {
-  return {
-    id: row.id,
-    slug: row.slug,
-    name: row.name,
-    hex: row.hex,
-    tagline: row.tagline,
-    story: row.story,
-    priceCents: row.price_cents,
-    stock: row.stock,
-  };
-}
+const adminProductsRouter = Router();
+adminProductsRouter.get('/', asyncHandler(products.list));
+adminProductsRouter.get('/:id', asyncHandler(products.get));
+adminProductsRouter.post('/', validate(productSchema, 'Invalid product'), asyncHandler(products.create));
+adminProductsRouter.put('/:id', validate(productUpdateSchema, 'Invalid product'), asyncHandler(products.update));
+adminProductsRouter.delete('/:id', asyncHandler(products.remove));
 
-productsRouter.get('/', async (req, res, next) => {
-  try {
-    const [rows] = await pool.query(
-      'SELECT * FROM products WHERE active = 1 ORDER BY sort_order ASC, id ASC'
-    );
-    res.json(rows.map(toPublicProduct));
-  } catch (err) {
-    next(err);
-  }
-});
+export { productsRouter, adminProductsRouter };

@@ -12,9 +12,9 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 // from server/.env, already pointed at a local MySQL instance.
 process.env.DB_NAME = 'simple_ecom_test';
 process.env.JWT_SECRET = 'test-secret';
-
-export const ADMIN_PASSWORD = 'admin-pass';
-process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(ADMIN_PASSWORD, 10);
+process.env.APP_ORIGIN = 'http://localhost:5173';
+process.env.GOOGLE_CLIENT_ID = 'test-client';
+process.env.GOOGLE_CLIENT_SECRET = 'test-secret';
 
 // Global mocks: every test file gets these automatically (registered here
 // before app.js/db.js are ever imported), so individual tests only need to
@@ -70,6 +70,8 @@ export async function resetDb() {
   await pool.query('TRUNCATE TABLE order_items');
   await pool.query('TRUNCATE TABLE orders');
   await pool.query('TRUNCATE TABLE products');
+  await pool.query('TRUNCATE TABLE user_identities');
+  await pool.query('TRUNCATE TABLE users');
   await pool.query('SET FOREIGN_KEY_CHECKS = 1');
 
   for (const p of SEED_PRODUCTS) {
@@ -104,12 +106,40 @@ export function buildOrderPayload(overrides = {}) {
   };
 }
 
-// Logs an admin session in against `app` and returns a supertest agent that
+// Inserts a user row directly (bypassing the signup endpoint) so tests can set
+// up fixtures without depending on the route under test. `password` is
+// optional: omitting it creates an OAuth-only account (password_hash NULL).
+export async function createUser({
+  email,
+  password,
+  name = 'Test User',
+  role = 'customer',
+  emailVerified = false,
+}) {
+  const passwordHash = password ? await bcrypt.hash(password, 10) : null;
+  const normalizedEmail = email.trim().toLowerCase();
+  const [result] = await pool.query(
+    `INSERT INTO users (email, email_verified_at, password_hash, name, role)
+     VALUES (?, ?, ?, ?, ?)`,
+    [normalizedEmail, emailVerified ? new Date() : null, passwordHash, name, role]
+  );
+  return result.insertId;
+}
+
+// Logs a user session in against `app` and returns a supertest agent that
 // carries the resulting cookie on every subsequent request.
-export async function adminAgent(app) {
+export async function loginAgent(app, email, password) {
   const agent = request.agent(app);
-  await agent.post('/api/admin/login').send({ password: ADMIN_PASSWORD });
+  await agent.post('/api/auth/login').send({ email, password });
   return agent;
+}
+
+// Creates a seeded admin user and returns a logged-in agent for it.
+export async function adminAgent(app) {
+  const email = `admin-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
+  const password = 'admin-pass-123';
+  await createUser({ email, password, name: 'Test Admin', role: 'admin', emailVerified: true });
+  return loginAgent(app, email, password);
 }
 
 beforeEach(async () => {

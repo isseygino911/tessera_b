@@ -3,12 +3,21 @@ import request from 'supertest';
 import './setup.js';
 import { createApp } from '../src/app.js';
 import { pool } from '../src/db.js';
-import { adminAgent, buildOrderPayload, stockOf } from './setup.js';
+import { adminAgent, buildOrderPayload, createUser, loginAgent, stockOf } from './setup.js';
 
 const app = createApp();
 
+let orderCounter = 0;
+
 async function createOrder(overrides = {}) {
-  const res = await request(app).post('/api/orders').send(buildOrderPayload(overrides));
+  // Each order needs a signed-in customer; a fresh email per call keeps
+  // fixtures independent of each other.
+  orderCounter += 1;
+  const email = `customer-${orderCounter}@example.com`;
+  await createUser({ email, password: 'correct-horse' });
+  const agent = await loginAgent(app, email, 'correct-horse');
+
+  const res = await agent.post('/api/orders').send(buildOrderPayload(overrides));
   return res.body.id;
 }
 

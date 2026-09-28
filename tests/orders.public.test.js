@@ -1,16 +1,24 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import './setup.js';
 import { createApp } from '../src/app.js';
 import { pool } from '../src/db.js';
 import { sendOrderNotification } from '../src/services/mailer.js';
-import { buildOrderPayload, stockOf } from './setup.js';
+import { buildOrderPayload, createUser, loginAgent, stockOf } from './setup.js';
 
 const app = createApp();
 
+let customerAgent;
+let customerId;
+
+beforeEach(async () => {
+  customerId = await createUser({ email: 'ada@example.com', password: 'correct-horse' });
+  customerAgent = await loginAgent(app, 'ada@example.com', 'correct-horse');
+});
+
 describe('POST /api/orders', () => {
-  it('creates an order, decrements stock, and snapshots price/name', async () => {
-    const res = await request(app).post('/api/orders').send(buildOrderPayload());
+  it('creates an order, decrements stock, snapshots price/name, and stores the signed-in user_id', async () => {
+    const res = await customerAgent.post('/api/orders').send(buildOrderPayload());
 
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('id');
@@ -18,7 +26,7 @@ describe('POST /api/orders', () => {
 
     const [orderRows] = await pool.query('SELECT * FROM orders WHERE id = ?', [res.body.id]);
     expect(orderRows).toHaveLength(1);
-    expect(orderRows[0]).toMatchObject({ total_cents: 9600, status: 'new' });
+    expect(orderRows[0]).toMatchObject({ total_cents: 9600, status: 'new', user_id: customerId });
 
     const [itemRows] = await pool.query('SELECT * FROM order_items WHERE order_id = ?', [res.body.id]);
     expect(itemRows).toHaveLength(1);
@@ -32,8 +40,16 @@ describe('POST /api/orders', () => {
     expect(sendOrderNotification).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects an order attempt with no session with 401', async () => {
+    const res = await request(app).post('/api/orders').send(buildOrderPayload());
+
+    expect(res.status).toBe(401);
+    const [orders] = await pool.query('SELECT * FROM orders');
+    expect(orders).toHaveLength(0);
+  });
+
   it('merges duplicate productIds in items into a single snapshot line', async () => {
-    const res = await request(app).post('/api/orders').send(
+    const res = await customerAgent.post('/api/orders').send(
       buildOrderPayload({
         items: [
           { productId: 1, qty: 2 },
@@ -68,19 +84,19 @@ describe('POST /api/orders', () => {
     const payload = buildOrderPayload();
     delete payload.customer[field];
 
-    const res = await request(app).post('/api/orders').send(payload);
+    const res = await customerAgent.post('/api/orders').send(payload);
 
     expect(res.status).toBe(400);
   });
 
   it('rejects an order with no items', async () => {
-    const res = await request(app).post('/api/orders').send(buildOrderPayload({ items: [] }));
+    const res = await customerAgent.post('/api/orders').send(buildOrderPayload({ items: [] }));
 
     expect(res.status).toBe(400);
   });
 
   it.each([0, -1, 1.5, 'two', null])('rejects a non-positive-integer qty (%s)', async (qty) => {
-    const res = await request(app)
+    const res = await customerAgent
       .post('/api/orders')
       .send(buildOrderPayload({ items: [{ productId: 1, qty }] }));
 
@@ -91,13 +107,13 @@ describe('POST /api/orders', () => {
   it('rejects an order for an inactive product', async () => {
     await pool.query('UPDATE products SET active = 0 WHERE id = 1');
 
-    const res = await request(app).post('/api/orders').send(buildOrderPayload());
+    const res = await customerAgent.post('/api/orders').send(buildOrderPayload());
 
     expect(res.status).toBe(400);
   });
 
   it('rejects an order for an unknown product', async () => {
-    const res = await request(app)
+    const res = await customerAgent
       .post('/api/orders')
       .send(buildOrderPayload({ items: [{ productId: 999, qty: 1 }] }));
 
@@ -105,7 +121,7 @@ describe('POST /api/orders', () => {
   });
 
   it('rejects an order when qty exceeds stock, leaving stock and orders untouched', async () => {
-    const res = await request(app)
+    const res = await customerAgent
       .post('/api/orders')
       .send(buildOrderPayload({ items: [{ productId: 1, qty: 21 }] }));
 
@@ -121,7 +137,7 @@ describe('POST /api/orders', () => {
   it('still returns 201 if the order-notification email fails to send', async () => {
     vi.mocked(sendOrderNotification).mockRejectedValueOnce(new Error('smtp down'));
 
-    const res = await request(app).post('/api/orders').send(buildOrderPayload());
+    const res = await customerAgent.post('/api/orders').send(buildOrderPayload());
 
     expect(res.status).toBe(201);
   });
@@ -131,8 +147,8 @@ describe('POST /api/orders', () => {
     const payload = buildOrderPayload({ items: [{ productId: 1, qty: 15 }] });
 
     const [resA, resB] = await Promise.all([
-      request(app).post('/api/orders').send(payload),
-      request(app).post('/api/orders').send(payload),
+      customerAgent.post('/api/orders').send(payload),
+      customerAgent.post('/api/orders').send(payload),
     ]);
 
     const statuses = [resA.status, resB.status].sort();

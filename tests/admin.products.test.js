@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import request from 'supertest';
 import './setup.js';
 import { createApp } from '../src/app.js';
 import { pool } from '../src/db.js';
-import { adminAgent, buildOrderPayload } from './setup.js';
+import { adminAgent, buildOrderPayload, createUser, loginAgent } from './setup.js';
 
 const app = createApp();
 
@@ -107,7 +106,11 @@ describe('admin products CRUD', () => {
   });
 
   it('DELETE /api/admin/products/:id soft-deletes (active=0) when referenced by an order', async () => {
-    await request(app).post('/api/orders').send(buildOrderPayload({ items: [{ productId: 2, qty: 1 }] }));
+    await createUser({ email: 'customer@example.com', password: 'correct-horse' });
+    const customerAgent = await loginAgent(app, 'customer@example.com', 'correct-horse');
+    await customerAgent
+      .post('/api/orders')
+      .send(buildOrderPayload({ items: [{ productId: 2, qty: 1 }] }));
     const agent = await adminAgent(app);
 
     const res = await agent.delete('/api/admin/products/2');

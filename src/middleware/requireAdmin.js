@@ -1,15 +1,9 @@
-import jwt from 'jsonwebtoken';
+import { HttpError } from '../lib/http.js';
+import { requireUser } from './requireUser.js';
 
-export function requireAdmin(req, res, next) {
-  const token = req.cookies?.admin_token;
-  if (!token) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
+const requireAdmin = [
+  requireUser,
+  (req, res, next) => next(req.user.role === 'admin' ? undefined : new HttpError(403, 'Forbidden')),
+];
 
-  try {
-    jwt.verify(token, process.env.JWT_SECRET);
-    next();
-  } catch {
-    res.status(401).json({ error: 'Not authenticated' });
-  }
-}
+export { requireAdmin };
