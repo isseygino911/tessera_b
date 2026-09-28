@@ -23,6 +23,13 @@ vi.mock('../src/services/mailer.js', () => ({
   sendOrderNotification: vi.fn(async () => {}),
 }));
 
+// No test ever touches S3: signedUrl deterministically turns a key into a
+// fake, inspectable URL so response assertions don't depend on real presigning.
+vi.mock('../src/services/storage.js', () => ({
+  signedUrl: vi.fn((key) => 'https://s3.test/' + key),
+  putObject: vi.fn(),
+}));
+
 const { pool, closePool } = await import('../src/db.js');
 const { sendOrderNotification } = await import('../src/services/mailer.js');
 
@@ -65,10 +72,74 @@ export const SEED_PRODUCTS = [
   },
 ];
 
+// Images seeded for product 1 (sunlit-amber): a main, two gallery shots
+// deliberately inserted out of order (sort_order 2 then 1) so ordering tests
+// catch a query that forgets ORDER BY sort_order, and a banner with a focal
+// point. Product 2 (forest-emerald) gets only a main. Product 3 (ocean-topaz)
+// gets none, to exercise the empty-images case.
+export const SEED_IMAGES = [
+  {
+    id: 1,
+    product_id: 1,
+    s3_key: 'products/sunlit-amber/main.jpg',
+    name: 'main',
+    alt: 'Sunlit Amber cut-out bead',
+    role: 'main',
+    fit: 'cover',
+    focal_point: null,
+    sort_order: 0,
+  },
+  {
+    id: 2,
+    product_id: 1,
+    s3_key: 'products/sunlit-amber/dish.jpg',
+    name: 'dish',
+    alt: 'Sunlit Amber beads in a dish',
+    role: 'gallery',
+    fit: 'cover',
+    focal_point: null,
+    sort_order: 2,
+  },
+  {
+    id: 3,
+    product_id: 1,
+    s3_key: 'products/sunlit-amber/reading.jpg',
+    name: 'reading',
+    alt: 'Sunlit Amber worn while reading',
+    role: 'gallery',
+    fit: 'contain',
+    focal_point: null,
+    sort_order: 1,
+  },
+  {
+    id: 4,
+    product_id: 1,
+    s3_key: 'products/sunlit-amber/story.jpg',
+    name: 'story',
+    alt: 'Sunlit Amber story banner',
+    role: 'banner',
+    fit: 'cover',
+    focal_point: '55% 40%',
+    sort_order: 0,
+  },
+  {
+    id: 5,
+    product_id: 2,
+    s3_key: 'products/forest-emerald/main.jpg',
+    name: 'main',
+    alt: 'Forest Emerald cut-out bead',
+    role: 'main',
+    fit: 'cover',
+    focal_point: null,
+    sort_order: 0,
+  },
+];
+
 export async function resetDb() {
   await pool.query('SET FOREIGN_KEY_CHECKS = 0');
   await pool.query('TRUNCATE TABLE order_items');
   await pool.query('TRUNCATE TABLE orders');
+  await pool.query('TRUNCATE TABLE product_images');
   await pool.query('TRUNCATE TABLE products');
   await pool.query('TRUNCATE TABLE user_identities');
   await pool.query('TRUNCATE TABLE users');
@@ -80,6 +151,25 @@ export async function resetDb() {
          (id, slug, name, hex, tagline, story, price_cents, stock, sort_order, active)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [p.id, p.slug, p.name, p.hex, p.tagline, p.story, p.price_cents, p.stock, p.sort_order, p.active]
+    );
+  }
+
+  for (const img of SEED_IMAGES) {
+    await pool.query(
+      `INSERT INTO product_images
+         (id, product_id, s3_key, name, alt, role, fit, focal_point, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        img.id,
+        img.product_id,
+        img.s3_key,
+        img.name,
+        img.alt,
+        img.role,
+        img.fit,
+        img.focal_point,
+        img.sort_order,
+      ]
     );
   }
 }

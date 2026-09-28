@@ -1,5 +1,6 @@
 import { pool } from '../db.js';
 import { HttpError } from '../lib/http.js';
+import { signedUrl } from './storage.js';
 
 const COLUMNS = {
   slug: 'slug',
@@ -32,6 +33,34 @@ const toPublicProduct = (row) => {
   return product;
 };
 
+const toImage = async (row) => ({
+  id: row.id,
+  name: row.name,
+  url: await signedUrl(row.s3_key),
+  alt: row.alt,
+  role: row.role,
+  fit: row.fit,
+  focalPoint: row.focal_point,
+});
+
+// Loads every image for the given products in one query and attaches them,
+// grouped by product, as `images` (empty array when a product has none).
+const attachImages = async (products) => {
+  if (products.length === 0) return products;
+  const [rows] = await pool.query(
+    `SELECT * FROM product_images WHERE product_id IN (?)
+     ORDER BY FIELD(role, 'main', 'gallery', 'banner', 'other'), sort_order, id`,
+    [products.map((p) => p.id)]
+  );
+  const imagesByProduct = new Map();
+  for (const row of rows) {
+    const image = await toImage(row);
+    if (!imagesByProduct.has(row.product_id)) imagesByProduct.set(row.product_id, []);
+    imagesByProduct.get(row.product_id).push(image);
+  }
+  return products.map((product) => ({ ...product, images: imagesByProduct.get(product.id) ?? [] }));
+};
+
 const toRow = (data) =>
   Object.fromEntries(
     Object.entries(data).map(([key, value]) => [COLUMNS[key], key === 'active' ? Number(value) : value])
@@ -44,18 +73,19 @@ const rethrowDuplicateSlug = (err) => {
 
 const listActiveProducts = async () => {
   const [rows] = await pool.query('SELECT * FROM products WHERE active = 1 ORDER BY sort_order, id');
-  return rows.map(toPublicProduct);
+  return attachImages(rows.map(toPublicProduct));
 };
 
 const listProducts = async () => {
   const [rows] = await pool.query('SELECT * FROM products ORDER BY sort_order, id');
-  return rows.map(toProduct);
+  return attachImages(rows.map(toProduct));
 };
 
 const getProduct = async (id) => {
   const [[row]] = await pool.query('SELECT * FROM products WHERE id = ?', [id]);
   if (!row) throw new HttpError(404, 'Product not found');
-  return toProduct(row);
+  const [withImages] = await attachImages([toProduct(row)]);
+  return withImages;
 };
 
 const createProduct = async (data) => {
