@@ -3,7 +3,7 @@ import './setup.js';
 import { createApp } from '../src/app.js';
 import { pool } from '../src/db.js';
 import { putObject, deleteObject } from '../src/services/storage.js';
-import { adminAgent, createUser, loginAgent } from './setup.js';
+import { adminAgent, customerAgent } from './setup.js';
 
 const app = createApp();
 
@@ -12,11 +12,6 @@ const app = createApp();
 const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const WEBP_BYTES = Buffer.from('RIFF....WEBPVP8 ');
-
-async function customerAgent(app) {
-  await createUser({ email: 'shopper@example.com', password: 'correct-horse' });
-  return loginAgent(app, 'shopper@example.com', 'correct-horse');
-}
 
 describe('POST /api/admin/products/:id/images', () => {
   it.each([
@@ -84,7 +79,10 @@ describe('POST /api/admin/products/:id/images', () => {
   it('rejects an empty body with 400', async () => {
     const agent = await adminAgent(app);
 
-    const res = await agent.post('/api/admin/products/3/images').set('Content-Type', 'image/jpeg').send('');
+    const res = await agent
+      .post('/api/admin/products/3/images')
+      .set('Content-Type', 'image/jpeg')
+      .send('');
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'Upload a JPG, PNG or WebP image' });
@@ -95,7 +93,10 @@ describe('POST /api/admin/products/:id/images', () => {
     const agent = await adminAgent(app);
     const oversized = Buffer.alloc(10 * 1024 * 1024 + 1, 1);
 
-    const res = await agent.post('/api/admin/products/3/images').set('Content-Type', 'image/jpeg').send(oversized);
+    const res = await agent
+      .post('/api/admin/products/3/images')
+      .set('Content-Type', 'image/jpeg')
+      .send(oversized);
 
     expect(res.status).toBe(413);
     expect(putObject).not.toHaveBeenCalled();
@@ -104,7 +105,10 @@ describe('POST /api/admin/products/:id/images', () => {
   it('gives a customer 403', async () => {
     const agent = await customerAgent(app);
 
-    const res = await agent.post('/api/admin/products/3/images').set('Content-Type', 'image/jpeg').send(JPEG_BYTES);
+    const res = await agent
+      .post('/api/admin/products/3/images')
+      .set('Content-Type', 'image/jpeg')
+      .send(JPEG_BYTES);
 
     expect(res.status).toBe(403);
     expect(putObject).not.toHaveBeenCalled();

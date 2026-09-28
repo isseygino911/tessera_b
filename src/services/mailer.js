@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 
 const formatCents = (cents) => `$${(cents / 100).toFixed(2)}`;
+const orderNumber = (id) => `#${id.slice(0, 8).toUpperCase()}`;
 
 const sendOrderNotification = async (order) => {
   const transport = nodemailer.createTransport({
@@ -15,8 +16,8 @@ const sendOrderNotification = async (order) => {
   await transport.sendMail({
     from: process.env.SMTP_USER,
     to: process.env.ORDER_NOTIFY_EMAIL,
-    subject: `New order #${order.id} from ${order.customer_name}`,
-    text: `New order #${order.id}\n\nCustomer: ${order.customer_name} <${order.email}>\n\nItems:\n${lines}\n\nTotal: ${formatCents(order.total_cents)}`,
+    subject: `New order ${orderNumber(order.id)} from ${order.customer_name}`,
+    text: `New order ${orderNumber(order.id)}\n\nCustomer: ${order.customer_name} <${order.email}>\n\nItems:\n${lines}\n\nTotal: ${formatCents(order.total_cents)}`,
   });
 };
 

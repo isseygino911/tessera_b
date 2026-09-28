@@ -5,15 +5,15 @@ const create = async (req, res) => {
 };
 
 const list = async (req, res) => {
-  res.json(await orders.listOrders(req.query.status));
+  res.json(await orders.listOrders(req.query));
 };
 
 const get = async (req, res) => {
   res.json(await orders.getOrderWithItems(req.params.id));
 };
 
-const updateStatus = async (req, res) => {
-  res.json(await orders.updateOrderStatus(req.params.id, req.body.status));
+const update = async (req, res) => {
+  res.json(await orders.updateOrder(req.params.id, req.body));
 };
 
-export { create, list, get, updateStatus };
+export { create, list, get, update };

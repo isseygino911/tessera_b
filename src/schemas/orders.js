@@ -25,7 +25,15 @@ const orderSchema = z.object({
     .min(1),
 });
 
-const orderStatusSchema = z.object({ status: z.enum(ORDER_STATUSES) });
-const orderListQuerySchema = orderStatusSchema.partial();
+const orderUpdateSchema = z
+  .object({ status: z.enum(ORDER_STATUSES), adminNote: z.string() })
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, { message: 'No fields to update' });
 
-export { orderSchema, orderStatusSchema, orderListQuerySchema };
+const orderListQuerySchema = z.object({
+  status: z.enum(ORDER_STATUSES).optional(),
+  q: z.string().trim().min(1).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+});
+
+export { orderSchema, orderUpdateSchema, orderListQuerySchema };

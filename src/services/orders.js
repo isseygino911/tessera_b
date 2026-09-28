@@ -1,6 +1,9 @@
+import crypto from 'node:crypto';
 import { pool, withTransaction } from '../db.js';
 import { HttpError } from '../lib/http.js';
 import { sendOrderNotification } from './mailer.js';
+
+const PAGE_SIZE = 20;
 
 const toOrder = (row) => ({
   id: row.id,
@@ -15,9 +18,11 @@ const toOrder = (row) => ({
   postalCode: row.postal_code,
   country: row.country,
   note: row.note,
+  adminNote: row.admin_note,
   status: row.status,
   totalCents: row.total_cents,
   createdAt: row.created_at,
+  itemCount: row.item_count,
 });
 
 // Merge duplicate productIds into a single line so stock/price are only
@@ -54,8 +59,10 @@ const createOrder = async ({ customer, items, user }) => {
       totalCents += product.price_cents * qty;
     }
 
-    const [result] = await connection.query('INSERT INTO orders SET ?', [
+    const id = crypto.randomUUID();
+    await connection.query('INSERT INTO orders SET ?', [
       {
+        id,
         user_id: user.id,
         customer_name: customer.name,
         email: customer.email,
@@ -72,10 +79,10 @@ const createOrder = async ({ customer, items, user }) => {
       },
     ]);
     for (const line of lines) {
-      await connection.query('INSERT INTO order_items SET ?', [{ order_id: result.insertId, ...line }]);
+      await connection.query('INSERT INTO order_items SET ?', [{ order_id: id, ...line }]);
     }
 
-    return { id: result.insertId, customer_name: customer.name, email: customer.email, total_cents: totalCents, items: lines };
+    return { id, customer_name: customer.name, email: customer.email, total_cents: totalCents, items: lines };
   });
 
   // The order is saved either way; a mail failure is only logged.
@@ -88,11 +95,28 @@ const createOrder = async ({ customer, items, user }) => {
   return { id: order.id };
 };
 
-const listOrders = async (status) => {
-  const [rows] = status
-    ? await pool.query('SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC', [status])
-    : await pool.query('SELECT * FROM orders ORDER BY created_at DESC');
-  return rows.map(toOrder);
+const listOrders = async ({ status, q, page = 1 } = {}) => {
+  const where = [];
+  const params = [];
+
+  if (status) {
+    where.push('status = ?');
+    params.push(status);
+  }
+  if (q) {
+    const prefix = q.replace(/^#/, '').toLowerCase();
+    where.push('(LOWER(id) LIKE ? OR customer_name LIKE ? OR email LIKE ?)');
+    params.push(`${prefix}%`, `%${q}%`, `%${q}%`);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM orders ${whereSql}`, params);
+  const [rows] = await pool.query(
+    `SELECT orders.*, (SELECT CAST(COALESCE(SUM(quantity), 0) AS UNSIGNED) FROM order_items WHERE order_items.order_id = orders.id) AS item_count
+     FROM orders ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    [...params, PAGE_SIZE, (page - 1) * PAGE_SIZE]
+  );
+  return { orders: rows.map(toOrder), total };
 };
 
 const getOrder = async (id) => {
@@ -129,13 +153,16 @@ const cancelOrder = (id) =>
     await connection.query("UPDATE orders SET status = 'cancelled' WHERE id = ?", [id]);
   });
 
-const updateOrderStatus = async (id, status) => {
+const updateOrder = async (id, { status, adminNote }) => {
   if (status === 'cancelled') {
     await cancelOrder(id);
-  } else {
+  } else if (status) {
     await pool.query('UPDATE orders SET status = ? WHERE id = ?', [status, id]);
+  }
+  if (adminNote !== undefined) {
+    await pool.query('UPDATE orders SET admin_note = ? WHERE id = ?', [adminNote, id]);
   }
   return getOrder(id);
 };
 
-export { createOrder, listOrders, getOrderWithItems, updateOrderStatus };
+export { createOrder, listOrders, getOrderWithItems, updateOrder };

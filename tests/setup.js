@@ -2,6 +2,7 @@ import { beforeEach, afterAll, vi } from 'vitest';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
 
@@ -198,6 +199,48 @@ export function buildOrderPayload(overrides = {}) {
   };
 }
 
+// Inserts an order row directly (bypassing POST /api/orders), for tests that
+// need to control fields the endpoint doesn't accept: an explicit UUID, a
+// backdated created_at (pagination, "this month" revenue), or a status set at
+// creation. Orders' id column is CHAR(36) now, so callers that don't care
+// about the id can omit it and get a fresh random one back.
+export async function seedOrder(overrides = {}) {
+  const { items, created_at: createdAt, ...rowOverrides } = overrides;
+  const id = overrides.id ?? crypto.randomUUID();
+  const row = {
+    id,
+    customer_name: 'Ada Lovelace',
+    email: 'ada@example.com',
+    phone: '555-0100',
+    address_line1: '1 Analytical Engine Way',
+    address_line2: null,
+    city: 'London',
+    region: 'LDN',
+    postal_code: 'W1A 1AA',
+    country: 'UK',
+    note: null,
+    status: 'new',
+    total_cents: 4800,
+    ...rowOverrides,
+    id,
+  };
+
+  await pool.query('INSERT INTO orders SET ?', [row]);
+  if (createdAt) {
+    await pool.query('UPDATE orders SET created_at = ? WHERE id = ?', [createdAt, id]);
+  }
+
+  for (const item of items ?? [{ productId: 1, qty: 1 }]) {
+    await pool.query(
+      `INSERT INTO order_items (order_id, product_id, product_name, unit_price_cents, quantity)
+       VALUES (?, ?, ?, ?, ?)`,
+      [id, item.productId, item.productName ?? 'Sunlit Amber', item.unitPriceCents ?? 4800, item.qty]
+    );
+  }
+
+  return id;
+}
+
 // Inserts a user row directly (bypassing the signup endpoint) so tests can set
 // up fixtures without depending on the route under test. `password` is
 // optional: omitting it creates an OAuth-only account (password_hash NULL).
@@ -231,6 +274,14 @@ export async function adminAgent(app) {
   const email = `admin-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
   const password = 'admin-pass-123';
   await createUser({ email, password, name: 'Test Admin', role: 'admin', emailVerified: true });
+  return loginAgent(app, email, password);
+}
+
+// Creates a seeded customer user and returns a logged-in agent for it.
+export async function customerAgent(app) {
+  const email = `customer-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
+  const password = 'customer-pass-123';
+  await createUser({ email, password, name: 'Test Customer', emailVerified: true });
   return loginAgent(app, email, password);
 }
 

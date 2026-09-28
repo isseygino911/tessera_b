@@ -5,6 +5,7 @@ import { requireAdmin } from './middleware/requireAdmin.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { productsRouter, adminProductsRouter } from './routes/products.js';
 import { ordersRouter, adminOrdersRouter } from './routes/orders.js';
+import { adminSummaryRouter } from './routes/summary.js';
 import { authRouter } from './routes/auth.js';
 
 const createApp = () => {
@@ -19,6 +20,7 @@ const createApp = () => {
   app.use('/api/auth', authRouter);
   app.use('/api/admin/products', requireAdmin, adminProductsRouter);
   app.use('/api/admin/orders', requireAdmin, adminOrdersRouter);
+  app.use('/api/admin/summary', requireAdmin, adminSummaryRouter);
 
   app.use(errorHandler);
 

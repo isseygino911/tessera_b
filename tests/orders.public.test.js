@@ -8,6 +8,8 @@ import { adminAgent, buildOrderPayload, createUser, loginAgent, stockOf } from '
 
 const app = createApp();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 let customerAgent;
 let customerId;
 
@@ -22,6 +24,7 @@ describe('POST /api/orders', () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('id');
+    expect(res.body.id).toMatch(UUID_RE);
     expect(await stockOf(1)).toBe(18);
 
     const [orderRows] = await pool.query('SELECT * FROM orders WHERE id = ?', [res.body.id]);
@@ -38,6 +41,8 @@ describe('POST /api/orders', () => {
     });
 
     expect(sendOrderNotification).toHaveBeenCalledTimes(1);
+    const [notifiedOrder] = vi.mocked(sendOrderNotification).mock.calls[0];
+    expect(notifiedOrder.id).toBe(res.body.id);
   });
 
   it('rejects an order attempt with no session with 401', async () => {
