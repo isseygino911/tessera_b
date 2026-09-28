@@ -31,7 +31,9 @@ const mergeItems = (items) => {
   return [...qtyByProductId].map(([productId, qty]) => ({ productId, qty })).sort((a, b) => a.productId - b.productId);
 };
 
-const createOrder = async ({ customer, items, userId }) => {
+const createOrder = async ({ customer, items, user }) => {
+  if (user.role === 'admin') throw new HttpError(403, "Admin accounts can't place orders");
+
   const order = await withTransaction(async (connection) => {
     const lines = [];
     let totalCents = 0;
@@ -54,7 +56,7 @@ const createOrder = async ({ customer, items, userId }) => {
 
     const [result] = await connection.query('INSERT INTO orders SET ?', [
       {
-        user_id: userId,
+        user_id: user.id,
         customer_name: customer.name,
         email: customer.email,
         phone: customer.phone,

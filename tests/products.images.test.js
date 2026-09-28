@@ -21,6 +21,7 @@ const expectSunlitAmberImages = (images) => {
     role: 'main',
     fit: 'cover',
     focalPoint: null,
+    sortOrder: 0,
   });
   expect(images[3]).toMatchObject({
     name: 'story',
@@ -29,9 +30,11 @@ const expectSunlitAmberImages = (images) => {
     role: 'banner',
     fit: 'cover',
     focalPoint: '55% 40%',
+    sortOrder: 0,
   });
   for (const img of images) {
     expect(img).toHaveProperty('id');
+    expect(img).toHaveProperty('sortOrder');
   }
 };
 
@@ -53,6 +56,7 @@ describe('GET /api/products images', () => {
         name: 'main',
         url: 'https://s3.test/products/forest-emerald/main.jpg',
         role: 'main',
+        sortOrder: 0,
       }),
     ]);
   });

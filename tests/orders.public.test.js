@@ -4,7 +4,7 @@ import './setup.js';
 import { createApp } from '../src/app.js';
 import { pool } from '../src/db.js';
 import { sendOrderNotification } from '../src/services/mailer.js';
-import { buildOrderPayload, createUser, loginAgent, stockOf } from './setup.js';
+import { adminAgent, buildOrderPayload, createUser, loginAgent, stockOf } from './setup.js';
 
 const app = createApp();
 
@@ -44,6 +44,17 @@ describe('POST /api/orders', () => {
     const res = await request(app).post('/api/orders').send(buildOrderPayload());
 
     expect(res.status).toBe(401);
+    const [orders] = await pool.query('SELECT * FROM orders');
+    expect(orders).toHaveLength(0);
+  });
+
+  it('rejects an admin placing an order with 403', async () => {
+    const agent = await adminAgent(app);
+
+    const res = await agent.post('/api/orders').send(buildOrderPayload());
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "Admin accounts can't place orders" });
     const [orders] = await pool.query('SELECT * FROM orders');
     expect(orders).toHaveLength(0);
   });

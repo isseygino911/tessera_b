@@ -14,4 +14,15 @@ const productSchema = z.object({
 
 const productUpdateSchema = productSchema.partial();
 
-export { productSchema, productUpdateSchema };
+const imageUpdateSchema = z
+  .object({
+    alt: z.string(),
+    role: z.enum(['main', 'gallery', 'banner', 'other']),
+    fit: z.enum(['cover', 'contain']),
+    focalPoint: z.string().nullable(),
+    sortOrder: z.number().int(),
+  })
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, { message: 'No fields to update' });
+
+export { productSchema, productUpdateSchema, imageUpdateSchema };

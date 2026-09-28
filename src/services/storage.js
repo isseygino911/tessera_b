@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION });
@@ -7,6 +7,10 @@ const putObject = async (key, body, contentType) => {
   await s3.send(
     new PutObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key, Body: body, ContentType: contentType })
   );
+};
+
+const deleteObject = async (key) => {
+  await s3.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key }));
 };
 
 // Signed with the time rounded down to the hour, so the URL stays identical
@@ -21,4 +25,4 @@ const signedUrl = async (key) => {
   });
 };
 
-export { putObject, signedUrl };
+export { putObject, signedUrl, deleteObject };

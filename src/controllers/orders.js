@@ -1,7 +1,7 @@
 import * as orders from '../services/orders.js';
 
 const create = async (req, res) => {
-  res.status(201).json(await orders.createOrder({ ...req.body, userId: req.user.id }));
+  res.status(201).json(await orders.createOrder({ ...req.body, user: req.user }));
 };
 
 const list = async (req, res) => {

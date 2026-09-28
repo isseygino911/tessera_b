@@ -1,6 +1,7 @@
 import { pool } from '../db.js';
 import { HttpError } from '../lib/http.js';
-import { signedUrl } from './storage.js';
+import { attachImages } from './productImages.js';
+import { deleteObject } from './storage.js';
 
 const COLUMNS = {
   slug: 'slug',
@@ -31,34 +32,6 @@ const toProduct = (row) => ({
 const toPublicProduct = (row) => {
   const { sortOrder, active, ...product } = toProduct(row);
   return product;
-};
-
-const toImage = async (row) => ({
-  id: row.id,
-  name: row.name,
-  url: await signedUrl(row.s3_key),
-  alt: row.alt,
-  role: row.role,
-  fit: row.fit,
-  focalPoint: row.focal_point,
-});
-
-// Loads every image for the given products in one query and attaches them,
-// grouped by product, as `images` (empty array when a product has none).
-const attachImages = async (products) => {
-  if (products.length === 0) return products;
-  const [rows] = await pool.query(
-    `SELECT * FROM product_images WHERE product_id IN (?)
-     ORDER BY FIELD(role, 'main', 'gallery', 'banner', 'other'), sort_order, id`,
-    [products.map((p) => p.id)]
-  );
-  const imagesByProduct = new Map();
-  for (const row of rows) {
-    const image = await toImage(row);
-    if (!imagesByProduct.has(row.product_id)) imagesByProduct.set(row.product_id, []);
-    imagesByProduct.get(row.product_id).push(image);
-  }
-  return products.map((product) => ({ ...product, images: imagesByProduct.get(product.id) ?? [] }));
 };
 
 const toRow = (data) =>
@@ -108,7 +81,11 @@ const deleteProduct = async (id) => {
     await pool.query('UPDATE products SET active = 0 WHERE id = ?', [id]);
     return { ok: true, softDeleted: true };
   }
+  const [images] = await pool.query('SELECT s3_key FROM product_images WHERE product_id = ?', [id]);
   await pool.query('DELETE FROM products WHERE id = ?', [id]);
+  for (const { s3_key } of images) {
+    await deleteObject(s3_key);
+  }
   return { ok: true, softDeleted: false };
 };
 

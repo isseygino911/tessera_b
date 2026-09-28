@@ -28,10 +28,12 @@ vi.mock('../src/services/mailer.js', () => ({
 vi.mock('../src/services/storage.js', () => ({
   signedUrl: vi.fn((key) => 'https://s3.test/' + key),
   putObject: vi.fn(),
+  deleteObject: vi.fn(),
 }));
 
 const { pool, closePool } = await import('../src/db.js');
 const { sendOrderNotification } = await import('../src/services/mailer.js');
+const { putObject, deleteObject } = await import('../src/services/storage.js');
 
 export const SEED_PRODUCTS = [
   {
@@ -235,6 +237,8 @@ export async function adminAgent(app) {
 beforeEach(async () => {
   await resetDb();
   vi.mocked(sendOrderNotification).mockClear();
+  vi.mocked(putObject).mockClear();
+  vi.mocked(deleteObject).mockClear();
 });
 
 afterAll(async () => {
