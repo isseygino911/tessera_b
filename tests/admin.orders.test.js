@@ -161,6 +161,7 @@ describe('GET /api/admin/orders/:id', () => {
       productName: 'Sunlit Amber',
       unitPriceCents: 4800,
       quantity: 2,
+      imageUrl: 'https://s3.test/products/sunlit-amber/main.jpg',
     });
   });
 

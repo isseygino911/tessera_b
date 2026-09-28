@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { pool, withTransaction } from '../db.js';
 import { HttpError } from '../lib/http.js';
 import { sendOrderNotification } from './mailer.js';
+import { attachImages } from './productImages.js';
 
 const PAGE_SIZE = 20;
 
@@ -127,7 +128,9 @@ const getOrder = async (id) => {
 
 const getOrderWithItems = async (id) => {
   const order = await getOrder(id);
-  const [items] = await pool.query('SELECT * FROM order_items WHERE order_id = ?', [id]);
+  const [rows] = await pool.query('SELECT * FROM order_items WHERE order_id = ?', [id]);
+  const items = await attachImages(rows.map((row) => ({ ...row, id: row.product_id })));
+
   return {
     ...order,
     items: items.map((item) => ({
@@ -135,6 +138,7 @@ const getOrderWithItems = async (id) => {
       productName: item.product_name,
       unitPriceCents: item.unit_price_cents,
       quantity: item.quantity,
+      imageUrl: item.images[0]?.url ?? null,
     })),
   };
 };
