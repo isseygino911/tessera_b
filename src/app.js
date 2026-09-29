@@ -7,6 +7,8 @@ import { productsRouter, adminProductsRouter } from './routes/products.js';
 import { ordersRouter, adminOrdersRouter } from './routes/orders.js';
 import { adminSummaryRouter } from './routes/summary.js';
 import { authRouter } from './routes/auth.js';
+import { addressesRouter } from './routes/addresses.js';
+import { requireUser } from './middleware/requireUser.js';
 
 const createApp = () => {
   const app = express();
@@ -18,6 +20,7 @@ const createApp = () => {
   app.use('/api/products', productsRouter);
   app.use('/api/orders', ordersRouter);
   app.use('/api/auth', authRouter);
+  app.use('/api/addresses', requireUser, addressesRouter);
   app.use('/api/admin/products', requireAdmin, adminProductsRouter);
   app.use('/api/admin/orders', requireAdmin, adminOrdersRouter);
   app.use('/api/admin/summary', requireAdmin, adminSummaryRouter);

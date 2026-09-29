@@ -7,6 +7,8 @@ import * as orders from '../controllers/orders.js';
 
 const ordersRouter = Router();
 ordersRouter.post('/', requireUser, validate(orderSchema, 'Invalid order'), asyncHandler(orders.create));
+ordersRouter.get('/', requireUser, asyncHandler(orders.listMine));
+ordersRouter.get('/:id', requireUser, asyncHandler(orders.getMine));
 
 const adminOrdersRouter = Router();
 adminOrdersRouter.get('/', validate(orderListQuerySchema, 'Invalid query', 'query'), asyncHandler(orders.list));

@@ -32,6 +32,15 @@ const me = (req, res) => {
   res.json({ user: req.user });
 };
 
+const updateMe = async (req, res) => {
+  res.json({ user: await users.updateProfile(req.user.id, req.body) });
+};
+
+const changePassword = async (req, res) => {
+  await users.changePassword(req.user.id, req.body);
+  res.json({ ok: true });
+};
+
 const googleStart = (req, res) => {
   if (!google.isGoogleConfigured()) {
     console.warn('GET /api/auth/google: Google OAuth is not configured (missing GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/APP_ORIGIN).');
@@ -61,4 +70,4 @@ const googleCallback = async (req, res) => {
   }
 };
 
-export { signup, login, logout, me, googleStart, googleCallback };
+export { signup, login, logout, me, updateMe, changePassword, googleStart, googleCallback };

@@ -144,6 +144,7 @@ export async function resetDb() {
   await pool.query('TRUNCATE TABLE orders');
   await pool.query('TRUNCATE TABLE product_images');
   await pool.query('TRUNCATE TABLE products');
+  await pool.query('TRUNCATE TABLE addresses');
   await pool.query('TRUNCATE TABLE user_identities');
   await pool.query('TRUNCATE TABLE users');
   await pool.query('SET FOREIGN_KEY_CHECKS = 1');
@@ -183,6 +184,7 @@ export async function stockOf(productId) {
 }
 
 export function buildOrderPayload(overrides = {}) {
+  const { customer, items, ...rest } = overrides;
   return {
     customer: {
       name: 'Ada Lovelace',
@@ -193,9 +195,10 @@ export function buildOrderPayload(overrides = {}) {
       region: 'LDN',
       postalCode: 'W1A 1AA',
       country: 'UK',
-      ...overrides.customer,
+      ...customer,
     },
-    items: overrides.items ?? [{ productId: 1, qty: 2 }],
+    items: items ?? [{ productId: 1, qty: 2 }],
+    ...rest,
   };
 }
 

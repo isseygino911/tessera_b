@@ -12,6 +12,7 @@ const toPublicUser = (row) => ({
   name: row.name,
   avatarUrl: row.avatar_url,
   role: row.role,
+  hasPassword: Boolean(row.password_hash),
 });
 
 const findUserById = async (id) => {
@@ -83,4 +84,18 @@ const findOrCreateGoogleUser = (profile) =>
     return toPublicUser(row);
   });
 
-export { findUserById, signup, login, findOrCreateGoogleUser };
+const updateProfile = async (userId, { name }) => {
+  await pool.query('UPDATE users SET ? WHERE id = ?', [{ name }, userId]);
+  return findUserById(userId);
+};
+
+const changePassword = async (userId, { currentPassword, newPassword }) => {
+  const [[user]] = await pool.query('SELECT password_hash FROM users WHERE id = ?', [userId]);
+  if (!user.password_hash) throw new HttpError(400, 'This account signs in with Google and has no password');
+  if (!(await bcrypt.compare(currentPassword, user.password_hash))) {
+    throw new HttpError(401, 'Current password is incorrect');
+  }
+  await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [await bcrypt.hash(newPassword, 10), userId]);
+};
+
+export { findUserById, signup, login, findOrCreateGoogleUser, updateProfile, changePassword };

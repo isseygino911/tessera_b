@@ -16,4 +16,12 @@ const update = async (req, res) => {
   res.json(await orders.updateOrder(req.params.id, req.body));
 };
 
-export { create, list, get, update };
+const listMine = async (req, res) => {
+  res.json(await orders.listOwnOrders(req.user.id));
+};
+
+const getMine = async (req, res) => {
+  res.json(await orders.getOwnOrder(req.params.id, req.user.id));
+};
+
+export { create, list, get, update, listMine, getMine };

@@ -3,6 +3,7 @@ import { pool, withTransaction } from '../db.js';
 import { HttpError } from '../lib/http.js';
 import { sendOrderNotification } from './mailer.js';
 import { attachImages } from './productImages.js';
+import { toAddressRow, saveCheckoutAddress } from './addresses.js';
 
 const PAGE_SIZE = 20;
 
@@ -37,7 +38,7 @@ const mergeItems = (items) => {
   return [...qtyByProductId].map(([productId, qty]) => ({ productId, qty })).sort((a, b) => a.productId - b.productId);
 };
 
-const createOrder = async ({ customer, items, user }) => {
+const createOrder = async ({ customer, items, saveAddress, user }) => {
   if (user.role === 'admin') throw new HttpError(403, "Admin accounts can't place orders");
 
   const order = await withTransaction(async (connection) => {
@@ -67,13 +68,7 @@ const createOrder = async ({ customer, items, user }) => {
         user_id: user.id,
         customer_name: customer.name,
         email: customer.email,
-        phone: customer.phone,
-        address_line1: customer.addressLine1,
-        address_line2: customer.addressLine2 ?? null,
-        city: customer.city,
-        region: customer.region,
-        postal_code: customer.postalCode,
-        country: customer.country,
+        ...toAddressRow(customer),
         note: customer.note ?? null,
         status: 'new',
         total_cents: totalCents,
@@ -82,6 +77,7 @@ const createOrder = async ({ customer, items, user }) => {
     for (const line of lines) {
       await connection.query('INSERT INTO order_items SET ?', [{ order_id: id, ...line }]);
     }
+    if (saveAddress) await saveCheckoutAddress(connection, user.id, customer);
 
     return { id, customer_name: customer.name, email: customer.email, total_cents: totalCents, items: lines };
   });
@@ -96,10 +92,15 @@ const createOrder = async ({ customer, items, user }) => {
   return { id: order.id };
 };
 
-const listOrders = async ({ status, q, page = 1 } = {}) => {
+// With a userId (a customer's own orders) there is no paging: a customer has only a few.
+const listOrders = async ({ status, q, page = 1, userId } = {}) => {
   const where = [];
   const params = [];
 
+  if (userId) {
+    where.push('user_id = ?');
+    params.push(userId);
+  }
   if (status) {
     where.push('status = ?');
     params.push(status);
@@ -114,10 +115,25 @@ const listOrders = async ({ status, q, page = 1 } = {}) => {
   const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM orders ${whereSql}`, params);
   const [rows] = await pool.query(
     `SELECT orders.*, (SELECT CAST(COALESCE(SUM(quantity), 0) AS UNSIGNED) FROM order_items WHERE order_items.order_id = orders.id) AS item_count
-     FROM orders ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-    [...params, PAGE_SIZE, (page - 1) * PAGE_SIZE]
+     FROM orders ${whereSql} ORDER BY created_at DESC ${userId ? '' : 'LIMIT ? OFFSET ?'}`,
+    userId ? params : [...params, PAGE_SIZE, (page - 1) * PAGE_SIZE]
   );
   return { orders: rows.map(toOrder), total };
+};
+
+// A customer's view of an order leaves out the admin-only fields.
+const toOwnOrder = ({ adminNote, userId, ...order }) => order;
+
+const listOwnOrders = async (userId) => {
+  const { orders } = await listOrders({ userId });
+  return { orders: orders.map(toOwnOrder) };
+};
+
+// 404 (not 403) for someone else's order, so it doesn't reveal that the order exists.
+const getOwnOrder = async (id, userId) => {
+  const order = await getOrderWithItems(id);
+  if (order.userId !== userId) throw new HttpError(404, 'Order not found');
+  return toOwnOrder(order);
 };
 
 const getOrder = async (id) => {
@@ -169,4 +185,4 @@ const updateOrder = async (id, { status, adminNote }) => {
   return getOrder(id);
 };
 
-export { createOrder, listOrders, getOrderWithItems, updateOrder };
+export { createOrder, listOrders, listOwnOrders, getOrderWithItems, getOwnOrder, updateOrder };
