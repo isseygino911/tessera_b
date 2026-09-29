@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { pool, withTransaction } from '../db.js';
 import { HttpError } from '../lib/http.js';
-import { sendOrderEmails } from './orderEmails.js';
+import { sendOrderEmails, sendShippedEmail } from './orderEmails.js';
 import { attachImages } from './productImages.js';
 import { toAddressRow, saveCheckoutAddress } from './addresses.js';
 
@@ -173,7 +173,11 @@ const updateOrder = async (id, { status, adminNote }) => {
   if (status === 'cancelled') {
     await cancelOrder(id);
   } else if (status) {
-    await pool.query('UPDATE orders SET status = ? WHERE id = ?', [status, id]);
+    // `status <> ?` makes affectedRows say whether the status really changed,
+    // so re-saving "shipped" doesn't email the customer twice.
+    const [result] = await pool.query('UPDATE orders SET status = ? WHERE id = ? AND status <> ?', [status, id, status]);
+    // Not awaited, like the order emails.
+    if (status === 'shipped' && result.affectedRows > 0) sendShippedEmail(await getOrderWithItems(id));
   }
   if (adminNote !== undefined) {
     await pool.query('UPDATE orders SET admin_note = ? WHERE id = ?', [adminNote, id]);

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { buyerEmail, adminEmail } from '../src/services/orderEmails.js';
+import { buyerEmail, adminEmail, shippedEmail } from '../src/services/orderEmails.js';
 
 beforeAll(() => {
   process.env.APP_ORIGIN = 'http://localhost:5173';
@@ -162,5 +162,73 @@ describe('adminEmail', () => {
 
     expect(mail.attachments).toHaveLength(0);
     expect(mail.html).not.toContain('<img');
+  });
+});
+
+describe('shippedEmail', () => {
+  it('addresses the buyer and includes a subject with "shipped" and the order number', () => {
+    const order = buildOrder();
+
+    const mail = shippedEmail(order);
+
+    expect(mail.to).toBe('ada@example.com');
+    expect(mail.subject.toLowerCase()).toContain('shipped');
+    expect(mail.subject).toContain(orderNumber);
+  });
+
+  it('includes the account order link and the product name', () => {
+    const order = buildOrder();
+
+    const mail = shippedEmail(order);
+
+    expect(mail.html).toContain(`http://localhost:5173/account/orders/${order.id}`);
+    expect(mail.html).toContain('Sunlit Amber');
+  });
+
+  it('attaches an inline image for an item with an imageUrl, referenced by cid in html', () => {
+    const order = buildOrder();
+
+    const mail = shippedEmail(order);
+
+    expect(mail.attachments).toHaveLength(1);
+    expect(mail.attachments[0]).toMatchObject({
+      path: 'https://s3.test/products/sunlit-amber/main.jpg',
+      cid: 'item-1@tessera',
+    });
+    expect(mail.html).toContain('src="cid:item-1@tessera"');
+  });
+
+  it('omits the attachment and the inline image markup for an item with no imageUrl', () => {
+    const order = buildOrder({
+      items: [
+        {
+          productId: 2,
+          productName: 'Forest Emerald',
+          unitPriceCents: 4800,
+          quantity: 1,
+          imageUrl: null,
+        },
+      ],
+    });
+
+    const mail = shippedEmail(order);
+
+    expect(mail.attachments).toHaveLength(0);
+    expect(mail.html).not.toContain('<img');
+  });
+
+  it('HTML-escapes user-supplied text in the customer name, address, and note', () => {
+    const order = buildOrder({
+      customerName: '<script>alert(1)</script>',
+      addressLine1: '<img src=x onerror=alert(1)>',
+      note: '<b>leave at door</b>',
+    });
+
+    const mail = shippedEmail(order);
+
+    expect(mail.html).not.toContain('<script>alert(1)</script>');
+    expect(mail.html).toContain('&lt;script&gt;');
+    expect(mail.html).not.toContain('<img src=x onerror=alert(1)>');
+    expect(mail.html).not.toContain('<b>leave at door</b>');
   });
 });

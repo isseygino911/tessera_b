@@ -3,6 +3,7 @@ import request from 'supertest';
 import './setup.js';
 import { createApp } from '../src/app.js';
 import { pool } from '../src/db.js';
+import { send } from '../src/services/mailer.js';
 import {
   adminAgent,
   buildOrderPayload,
@@ -292,6 +293,76 @@ describe('PATCH /api/admin/orders/:id', () => {
     const res = await request(app).patch(`/api/admin/orders/${id}`).send({ status: 'contacted' });
 
     expect(res.status).toBe(401);
+  });
+
+  describe('shipped notification email', () => {
+    it('sends a "shipped" email to the order email when status changes to shipped', async () => {
+      const id = await seedOrder({ status: 'paid', email: 'ada@example.com' });
+      const agent = await adminAgent(app);
+
+      const res = await agent.patch(`/api/admin/orders/${id}`).send({ status: 'shipped' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ status: 'shipped' });
+      expect(send).toHaveBeenCalledTimes(1);
+      const mail = send.mock.calls[0][0];
+      expect(mail.to).toBe('ada@example.com');
+      expect(mail.subject.toLowerCase()).toContain('shipped');
+    });
+
+    it('does not send an email when the order is already shipped', async () => {
+      const id = await seedOrder({ status: 'shipped', email: 'ada@example.com' });
+      const agent = await adminAgent(app);
+
+      const res = await agent.patch(`/api/admin/orders/${id}`).send({ status: 'shipped' });
+
+      expect(res.status).toBe(200);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('does not send a shipped email when changing to another status', async () => {
+      const id = await seedOrder({ status: 'new', email: 'ada@example.com' });
+      const agent = await adminAgent(app);
+
+      const res = await agent.patch(`/api/admin/orders/${id}`).send({ status: 'paid' });
+
+      expect(res.status).toBe(200);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('does not send a shipped email when only adminNote is updated on a shipped order', async () => {
+      const id = await seedOrder({ status: 'shipped', email: 'ada@example.com' });
+      const agent = await adminAgent(app);
+
+      const res = await agent.patch(`/api/admin/orders/${id}`).send({ adminNote: 'left with neighbor' });
+
+      expect(res.status).toBe(200);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('still returns 200 with status shipped even if the email send rejects', async () => {
+      const id = await seedOrder({ status: 'paid', email: 'ada@example.com' });
+      const agent = await adminAgent(app);
+      send.mockRejectedValueOnce(new Error('SMTP down'));
+
+      const res = await agent.patch(`/api/admin/orders/${id}`).send({ status: 'shipped' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ status: 'shipped' });
+      const [[row]] = await pool.query('SELECT status FROM orders WHERE id = ?', [id]);
+      expect(row.status).toBe('shipped');
+    });
+
+    it('404s for an unknown UUID with status shipped and does not send an email', async () => {
+      const agent = await adminAgent(app);
+
+      const res = await agent
+        .patch('/api/admin/orders/00000000-0000-0000-0000-000000000000')
+        .send({ status: 'shipped' });
+
+      expect(res.status).toBe(404);
+      expect(send).not.toHaveBeenCalled();
+    });
   });
 });
 

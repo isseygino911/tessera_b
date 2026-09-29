@@ -91,33 +91,38 @@ const itemLinesText = (order) =>
     .map((item) => `- ${item.productName}: ${item.quantity} x ${formatCents(item.unitPriceCents)} = ${formatCents(item.unitPriceCents * item.quantity)}`)
     .join('\n');
 
-const buyerEmail = (order) => {
+// The buyer-facing emails (confirmation, shipped) share one layout; `copy`
+// supplies the wording, `firstName` and `number` are filled in for it.
+const customerEmail = (order, copy) => {
   const number = orderNumber(order.id);
   const firstName = order.customerName.split(' ')[0];
   const orderUrl = `${process.env.APP_ORIGIN}/account/orders/${order.id}`;
   const address = addressLines(order);
+  const { subject, preheader, heading, intro, closing } = copy({ number, firstName });
 
   const details = [
     sectionHtml('Shipping to', [order.customerName, ...address].map(escapeHtml).join('<br>')),
     order.note ? sectionHtml('Your note', escapeHtml(order.note)) : '',
     buttonHtml(orderUrl, 'View your order'),
-    `<p style="margin:28px 0 0;font:14px/1.6 ${SANS};color:${COLORS.dim};">We'll email you again when your order ships. Questions? Just reply to this email.</p>`,
+    `<p style="margin:28px 0 0;font:14px/1.6 ${SANS};color:${COLORS.dim};">${closing}</p>`,
   ].join('');
 
   return {
     to: order.email,
-    subject: `Your Tessera order ${number}`,
+    subject,
     html: layoutHtml({
-      preheader: `Thank you — we've received order ${number}.`,
+      preheader,
       eyebrow: `Order ${number} · ${formatDate(order.createdAt)}`,
-      heading: `Thank you for your order, ${escapeHtml(firstName)}`,
-      intro: "We've received your order and will get it ready for you.",
+      heading: escapeHtml(heading),
+      intro,
       order,
       details,
     }),
-    text: `Thank you for your order, ${firstName}.
+    text: `${heading}.
 
 Order ${number} · ${formatDate(order.createdAt)}
+
+${intro}
 
 ${itemLinesText(order)}
 Total: ${formatCents(order.totalCents)}
@@ -127,11 +132,29 @@ ${[order.customerName, ...address].join('\n')}
 ${order.note ? `\nYour note: ${order.note}\n` : ''}
 View your order: ${orderUrl}
 
-We'll email you again when your order ships. Questions? Just reply to this email.
+${closing}
 — Tessera`,
     attachments: imageAttachments(order),
   };
 };
+
+const buyerEmail = (order) =>
+  customerEmail(order, ({ number, firstName }) => ({
+    subject: `Your Tessera order ${number}`,
+    preheader: `Thank you — we've received order ${number}.`,
+    heading: `Thank you for your order, ${firstName}`,
+    intro: "We've received your order and will get it ready for you.",
+    closing: "We'll email you again when your order ships. Questions? Just reply to this email.",
+  }));
+
+const shippedEmail = (order) =>
+  customerEmail(order, ({ number, firstName }) => ({
+    subject: `Your Tessera order ${number} has shipped`,
+    preheader: `Order ${number} is on its way.`,
+    heading: `Your order is on its way, ${firstName}`,
+    intro: 'Good news — your bracelets are packed and have shipped.',
+    closing: 'Questions about your delivery? Just reply to this email.',
+  }));
 
 const adminEmail = (order) => {
   const number = orderNumber(order.id);
@@ -176,20 +199,20 @@ Open in admin: ${adminUrl}`,
   };
 };
 
-// Both sends start right away; the order is already saved, so any failure
-// (building or sending) is only logged and never reaches the caller.
-const sendOrderEmails = (order) =>
-  Promise.all(
-    [
-      ['buyer', buyerEmail],
-      ['admin', adminEmail],
-    ].map(async ([who, build]) => {
-      try {
-        await send(build(order));
-      } catch (err) {
-        console.error(`Failed to send ${who} order email for ${order.id}:`, err);
-      }
-    })
-  );
+// The order is already saved, so any failure (building or sending) is only
+// logged and never reaches the caller.
+const sendLogged = async (label, build, order) => {
+  try {
+    await send(build(order));
+  } catch (err) {
+    console.error(`Failed to send ${label} email for order ${order.id}:`, err);
+  }
+};
 
-export { buyerEmail, adminEmail, sendOrderEmails };
+// Both sends start right away.
+const sendOrderEmails = (order) =>
+  Promise.all([sendLogged('buyer order', buyerEmail, order), sendLogged('admin order', adminEmail, order)]);
+
+const sendShippedEmail = (order) => sendLogged('shipped', shippedEmail, order);
+
+export { buyerEmail, adminEmail, shippedEmail, sendOrderEmails, sendShippedEmail };
