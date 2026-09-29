@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { pool, withTransaction } from '../db.js';
 import { HttpError } from '../lib/http.js';
-import { sendOrderNotification } from './mailer.js';
+import { sendOrderEmails } from './orderEmails.js';
 import { attachImages } from './productImages.js';
 import { toAddressRow, saveCheckoutAddress } from './addresses.js';
 
@@ -41,7 +41,7 @@ const mergeItems = (items) => {
 const createOrder = async ({ customer, items, saveAddress, user }) => {
   if (user.role === 'admin') throw new HttpError(403, "Admin accounts can't place orders");
 
-  const order = await withTransaction(async (connection) => {
+  const id = await withTransaction(async (connection) => {
     const lines = [];
     let totalCents = 0;
 
@@ -79,17 +79,13 @@ const createOrder = async ({ customer, items, saveAddress, user }) => {
     }
     if (saveAddress) await saveCheckoutAddress(connection, user.id, customer);
 
-    return { id, customer_name: customer.name, email: customer.email, total_cents: totalCents, items: lines };
+    return id;
   });
 
-  // The order is saved either way; a mail failure is only logged.
-  try {
-    await sendOrderNotification(order);
-  } catch (err) {
-    console.error('Failed to send order notification email:', err);
-  }
+  // Not awaited: checkout doesn't wait for SMTP or the image downloads.
+  sendOrderEmails(await getOrderWithItems(id));
 
-  return { id: order.id };
+  return { id };
 };
 
 // With a userId (a customer's own orders) there is no paging: a customer has only a few.

@@ -3,12 +3,14 @@ import request from 'supertest';
 import './setup.js';
 import { createApp } from '../src/app.js';
 import { pool } from '../src/db.js';
-import { sendOrderNotification } from '../src/services/mailer.js';
+import { send } from '../src/services/mailer.js';
 import { adminAgent, buildOrderPayload, createUser, loginAgent, stockOf } from './setup.js';
 
 const app = createApp();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const orderNumberOf = (id) => `#${id.slice(0, 8).toUpperCase()}`;
 
 let customerAgent;
 let customerId;
@@ -39,10 +41,33 @@ describe('POST /api/orders', () => {
       unit_price_cents: 4800,
       quantity: 2,
     });
+  });
 
-    expect(sendOrderNotification).toHaveBeenCalledTimes(1);
-    const [notifiedOrder] = vi.mocked(sendOrderNotification).mock.calls[0];
-    expect(notifiedOrder.id).toBe(res.body.id);
+  it('sends a buyer confirmation and an admin notification with the order details', async () => {
+    const res = await customerAgent.post('/api/orders').send(buildOrderPayload());
+    const orderNumber = orderNumberOf(res.body.id);
+
+    expect(send).toHaveBeenCalledTimes(2);
+    const calls = vi.mocked(send).mock.calls.map(([mail]) => mail);
+
+    const buyerMail = calls.find((mail) => mail.to === 'ada@example.com');
+    expect(buyerMail).toBeDefined();
+    expect(buyerMail.subject).toContain(orderNumber);
+    expect(buyerMail.html).toContain(`/account/orders/${res.body.id}`);
+
+    const adminMail = calls.find((mail) => mail.to === 'owner@test.local');
+    expect(adminMail).toBeDefined();
+    expect(adminMail.subject).toContain(orderNumber);
+    expect(adminMail.html).toContain(`/admin/orders/${res.body.id}`);
+    expect(adminMail.html).toContain('ada@example.com');
+
+    // Product 1 (sunlit-amber) is seeded with a main image, so the item
+    // should be attached as an inline image and referenced by cid in the html.
+    expect(buyerMail.attachments).toHaveLength(1);
+    const [attachment] = buyerMail.attachments;
+    expect(attachment.cid).toBe('item-1@tessera');
+    expect(attachment.path).toBe('https://s3.test/products/sunlit-amber/main.jpg');
+    expect(buyerMail.html).toContain(`cid:${attachment.cid}`);
   });
 
   it('rejects an order attempt with no session with 401', async () => {
@@ -150,12 +175,14 @@ describe('POST /api/orders', () => {
     expect(orders).toHaveLength(0);
   });
 
-  it('still returns 201 if the order-notification email fails to send', async () => {
-    vi.mocked(sendOrderNotification).mockRejectedValueOnce(new Error('smtp down'));
+  it('still returns 201 if the order-notification emails fail to send', async () => {
+    vi.mocked(send).mockRejectedValueOnce(new Error('smtp down')).mockRejectedValueOnce(new Error('smtp down'));
 
     const res = await customerAgent.post('/api/orders').send(buildOrderPayload());
 
     expect(res.status).toBe(201);
+    const [orders] = await pool.query('SELECT * FROM orders WHERE id = ?', [res.body.id]);
+    expect(orders).toHaveLength(1);
   });
 
   it('under concurrent requests for more than the remaining stock, allows exactly one', async () => {

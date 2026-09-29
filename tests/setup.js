@@ -16,12 +16,14 @@ process.env.JWT_SECRET = 'test-secret';
 process.env.APP_ORIGIN = 'http://localhost:5173';
 process.env.GOOGLE_CLIENT_ID = 'test-client';
 process.env.GOOGLE_CLIENT_SECRET = 'test-secret';
+process.env.ORDER_NOTIFY_EMAIL = 'owner@test.local';
 
 // Global mocks: every test file gets these automatically (registered here
 // before app.js/db.js are ever imported), so individual tests only need to
 // import the mocked module to assert on calls or override a return value.
 vi.mock('../src/services/mailer.js', () => ({
-  sendOrderNotification: vi.fn(async () => {}),
+  send: vi.fn(async () => ({})),
+  sendTestEmail: vi.fn(async ({ to }) => ({ from: 'shop@test.local', to })),
 }));
 
 // No test ever touches S3: signedUrl deterministically turns a key into a
@@ -33,7 +35,7 @@ vi.mock('../src/services/storage.js', () => ({
 }));
 
 const { pool, closePool } = await import('../src/db.js');
-const { sendOrderNotification } = await import('../src/services/mailer.js');
+const { send } = await import('../src/services/mailer.js');
 const { putObject, deleteObject } = await import('../src/services/storage.js');
 
 export const SEED_PRODUCTS = [
@@ -290,7 +292,7 @@ export async function customerAgent(app) {
 
 beforeEach(async () => {
   await resetDb();
-  vi.mocked(sendOrderNotification).mockClear();
+  vi.mocked(send).mockClear();
   vi.mocked(putObject).mockClear();
   vi.mocked(deleteObject).mockClear();
 });
